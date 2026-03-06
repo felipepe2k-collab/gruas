@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Central Ulfar - Dashboard Operativo</title>
+    
+    <!-- Librerías Core -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Gráficos Recharts (Dependencias) -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    
+    <!-- Babel para JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Mapas Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #f8fafc;
+            color: #1e293b;
+            font-size: 13px;
+        }
+
+        .leaflet-container { 
+            z-index: 10 !important; 
+            border-radius: 1rem; 
+            border: 1px solid #e2e8f0; 
+        }
+
+        .animate-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+        input, select, textarea {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 0.75rem !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 0.9rem !important;
+            background-color: #fff !important;
+            color: #1e293b !important;
+            outline: none !important;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+        }
+
+        label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.4rem;
+            display: block;
+        }
+
+        .nav-tab-active {
+            color: #2563eb;
+            background-color: #eff6ff;
+            border-bottom: 3px solid #2563eb;
+        }
+
+        .btn-nav {
+            padding: 0 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            height: 100%;
+        }
+
+        /* Escala aumentada para el calendario */
+        .calendar-day {
+            min-height: 140px; /* Mucho más grande */
+            transition: all 0.2s;
+            border: 1px solid #e2e8f0;
+            background-color: #ffffff;
+        }
+
+        .calendar-day:hover { 
+            background-color: #f8fafc; 
+            border-color: #cbd5e1; 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .hero-gradient {
+            background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+        
+        // --- COMPONENTE DE ICONOS SVG ---
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const paths = {
+                MapPin: <g><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></g>,
+                Car: <g><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" /><circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" /></g>,
+                Info: <g><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></g>,
+                Clock: <g><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></g>,
+                User: <g><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></g>,
+                Check: <polyline points="20 6 9 17 4 12" />,
+                CheckCircle: <g><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></g>,
+                Truck: <g><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></g>,
+                ChevronLeft: <polyline points="15 18 9 12 15 6" />,
+                ChevronRight: <polyline points="9 18 15 12 9 6" />,
+                ChevronDown: <polyline points="6 9 12 15 18 9" />,
+                Layout: <g><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></g>,
+                Calendar: <g><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></g>,
+                AlertTriangle: <g><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></g>,
+                MessageSquare: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+                ShieldCheck: <g><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></g>,
+                Dollar: <g><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></g>,
+                Home: <g><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></g>,
+                ArrowRight: <g><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></g>,
+                LogOut: <g><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></g>,
+                Navigation: <polygon points="3 11 22 2 13 21 11 13 3 11" />,
+                Target: <g><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></g>,
+                Phone: <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />,
+                Zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            };
+            return (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    {paths[name] || <circle cx="12" cy="12" r="10" />}
+                </svg>
+            );
+        };
+
+        const MOCK_VEHICLES = [
+            { id: 1, marca: "Audi", modelo: "A4 Avant", tipo: "Turismo", largo: 4.76, l_l3: 4.50, gama: "Alta", categoria: "Familiar", voladizo: 0.90, peso: 1650, cilindraje: 2000 },
+            { id: 2, marca: "Volkswagen", modelo: "Golf 8", tipo: "Turismo", largo: 4.28, l_l3: 4.10, gama: "Media", categoria: "Compacto", voladizo: 0.85, peso: 1350, cilindraje: 1500 },
+            { id: 3, marca: "Mercedes-Benz", modelo: "Sprinter L2H2", tipo: "Furgón", largo: 5.93, l_l3: 5.60, gama: "Industrial", categoria: "Ligero", voladizo: 1.10, peso: 2400, cilindraje: 2200 },
+            { id: 4, marca: "Renault", modelo: "Trafic", tipo: "Furgón", largo: 5.08, l_l3: 5.08, gama: "Industrial", categoria: "Medio", voladizo: 1.0, peso: 1950, cilindraje: 2000 },
+        ];
+
+        const COUNTRY_CODES = [
+            { name: "España", code: "34" }, { name: "Francia", code: "33" }, { name: "Portugal", code: "351" },
+            { name: "Alemania", code: "49" }, { name: "Italia", code: "39" }, { name: "Reino Unido", code: "44" }
+        ];
+
+        // --- COMPONENTE DE MAPA ---
+        const InteractiveMap = ({ lat, lng, onLocationChange, title }) => {
+            const mapRef = useRef(null);
+            const mapInstance = useRef(null);
+            const markerInstance = useRef(null);
+
+            useEffect(() => {
+                if (window.L && !mapInstance.current && mapRef.current) {
+                    mapInstance.current = L.map(mapRef.current).setView([lat, lng], 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance.current);
+                    markerInstance.current = L.marker([lat, lng], { draggable: true }).addTo(mapInstance.current);
+                    markerInstance.current.on('dragend', () => {
+                        const pos = markerInstance.current.getLatLng();
+                        onLocationChange(pos.lat, pos.lng);
+                    });
+                }
+            }, []);
+
+            useEffect(() => {
+                if (markerInstance.current && mapInstance.current) {
+                    markerInstance.current.setLatLng([lat, lng]);
+                    mapInstance.current.panTo([lat, lng]);
+                }
+            }, [lat, lng]);
+
+            return (
+                <div className="relative w-full h-[280px] overflow-hidden rounded-3xl border-4 border-slate-50 shadow-inner my-4 animate-in">
+                    <div ref={mapRef} className="w-full h-full"></div>
+                    <div className="absolute top-4 left-4 z-[1000] bg-slate-900/90 backdrop-blur text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg border border-slate-700">{title}</div>
+                </div>
+            );
+        };
+
+        // --- APP PRINCIPAL ---
+        function App() {
+            const [activeTab, setActiveTab] = useState('home');
+            const [step, setStep] = useState(1);
+            const [searchTerm, setSearchTerm] = useState("");
+            const [showVehResults, setShowVehResults] = useState(false);
+            const [showSuccess, setShowSuccess] = useState(false);
+            
+            // Generar fechas dinámicas para que los datos del historial aparezcan en el mes actual
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+            // Estado para historial de visitas
+            const [history, setHistory] = useState([
+                { id: 101, cliente: "Carlos Ulfar", carro: "Audi A4", destino: "Hospitalet", precio: 121.00, status: "Programado", fecha: `${todayStr}T10:00` },
+                { id: 102, cliente: "Marta Ruiz", carro: "VW Golf 8", destino: "Barcelona Centro", precio: 96.80, status: "Pendiente", fecha: `${tomorrowStr}T15:30` }
+            ]);
+
+            // Formulario y Estados de los 9 Factores
+            const [formData, setFormData] = useState({
+                recogida: "Carrer de Trafalgar, 12, Barcelona",
+                recogidaCoords: { lat: 41.3892, lng: 2.1772 },
+                entrega: "Santa Eulalia, Hospitalet",
+                entregaCoords: { lat: 41.3650, lng: 2.1200 },
+                distanciaVacio: 0,
+                matricula: "", marcaModelo: "", tipo: "", largo: "", l_l3: "", gama: "", categoria: "", voladizo: "", peso: 0, cilindraje: "",
+                tiempoIncidencia: "0", estadoVehiculo: "0", prioridad: "0", valorVehiculo: "0", horarioEspecial: "0", recargoNacionalidad: "0",
+                presenciaCliente: "Cliente presente", nombreCliente: "", fechaServicio: new Date().toISOString().slice(0, 16), 
+                telefonoCliente: "", indicativoPais: "34", conductor: "Diego Garcia", esTaller: "NO", 
+                canalOrigen: "Particular", metodoPago: "Efectivo", requiereFactura: "NO", 
+                precioFinalManual: "", adelantosPagos: "0", observaciones: ""
+            });
+
+            // Motor de Distancia (Factor 1)
+            const currentDistance = useMemo(() => {
+                const R = 6371;
+                const dLat = (formData.entregaCoords.lat - formData.recogidaCoords.lat) * Math.PI / 180;
+                const dLon = (formData.entregaCoords.lng - formData.recogidaCoords.lng) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(formData.recogidaCoords.lat * Math.PI / 180) * Math.cos(formData.entregaCoords.lat * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+                return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(2));
+            }, [formData.recogidaCoords, formData.entregaCoords]);
+
+            // MOTOR DE CÁLCULO DE 9 FACTORES
+            const calculation = useMemo(() => {
+                const d = currentDistance;
+                
+                // FACTOR 1: Recorrido con Carga
+                let f1_base = 80; let tramoLabel = "0-10 km";
+                if (d > 30) { f1_base = 100 + (Math.ceil((d - 30) / 5) * 5); tramoLabel = `+30 km`; } 
+                else if (d > 25) { f1_base = 100; tramoLabel = "26-30 km"; }
+                else if (d > 20) { f1_base = 95; tramoLabel = "21-25 km"; }
+                else if (d > 15) { f1_base = 90; tramoLabel = "16-20 km"; }
+                else if (d > 10) { f1_base = 85; tramoLabel = "11-15 km"; }
+
+                // FACTOR 2: Vacío (>15km = +1€/km)
+                const dVacio = parseFloat(formData.distanciaVacio) || 0;
+                const f2_vacio = dVacio > 15 ? (dVacio - 15) * 1 : 0;
+
+                // FACTOR 3: Peso y Dimensiones (NUNCA SE SUMAN, SE APLICA EL MAYOR)
+                const peso = parseFloat(formData.peso) || 0;
+                let pFijo = 0, pKm = 0;
+                if (peso >= 1901 && peso <= 2050) { pFijo = 60; pKm = 0.40; }
+                else if (peso >= 2051 && peso <= 2200) { pFijo = 80; pKm = 0.60; }
+                else if (peso >= 2201 && peso <= 2300) { pFijo = 95; pKm = 0.80; }
+                else if (peso >= 2301 && peso <= 2400) { pFijo = 110; pKm = 1.00; }
+                else if (peso >= 2401 && peso <= 2500) { pFijo = 120; pKm = 1.20; }
+                const f3_peso = pFijo + (d * pKm);
+
+                const dim = parseFloat(formData.l_l3) || 0;
+                let dFijo = 0, dKm = 0;
+                if (dim >= 5.00 && dim <= 5.49) { dFijo = 150; dKm = 1.50; }
+                else if (dim >= 5.50 && dim <= 6.00) { dFijo = 200; dKm = 2.00; }
+                const f3_dim = dFijo + (d * dKm);
+
+                const f3_mayor = Math.max(f3_peso, f3_dim);
+
+                // Factores 4 al 8
+                const f4_incidencia = parseFloat(formData.tiempoIncidencia) || 0;
+                const f5_mecanica = parseFloat(formData.estadoVehiculo) || 0;
+                const f6_prioridad = parseFloat(formData.prioridad) || 0;
+                const f7_valor = parseFloat(formData.valorVehiculo) || 0;
+                const f8_horario = parseFloat(formData.horarioEspecial) || 0;
+
+                const subtotal = f1_base + f2_vacio + f3_mayor + f4_incidencia + f5_mecanica + f6_prioridad + f7_valor + f8_horario;
+
+                // FACTOR 9: Nacionalidad (% sobre subtotal)
+                const f9_nacionalidad = parseFloat(formData.recargoNacionalidad) || 0;
+                const recargoNacionalidad = subtotal * f9_nacionalidad;
+
+                const total = subtotal + recargoNacionalidad;
+
+                return { 
+                    f1_base, tramoLabel, f2_vacio, dVacio, 
+                    f3_mayor, f3_peso, pFijo, pKm, f3_dim, dFijo, dKm, 
+                    f4_incidencia, f5_mecanica, f6_prioridad, f7_valor, f8_horario, 
+                    recargoNacionalidad, subtotal, total, iva: total * 0.21 
+                };
+            }, [formData, currentDistance]);
+
+            const handleFinalize = () => {
+                const newOrder = {
+                    id: Date.now(),
+                    cliente: formData.nombreCliente || "Particular Nuevo",
+                    carro: formData.marcaModelo || "Vehículo General",
+                    destino: formData.entrega,
+                    precio: parseFloat(formData.precioFinalManual) || (calculation.total + calculation.iva),
+                    status: formData.prioridad === "0" ? "Programado" : "Pendiente",
+                    fecha: formData.fechaServicio
+                };
+                setHistory([newOrder, ...history]);
+                setShowSuccess(true);
+            };
+
+            const selectVehicle = (v) => {
+                setFormData({...formData, marcaModelo: `${v.marca} ${v.modelo}`, tipo: v.tipo, largo: v.largo, l_l3: v.l_l3, gama: v.gama, categoria: v.categoria, voladizo: v.voladizo, peso: v.peso, cilindraje: v.cilindraje });
+                setSearchTerm(`${v.marca} ${v.modelo}`); setShowVehResults(false);
+            };
+
+            // --- VISTA HOME ---
+            const HomeView = () => (
+                <div className="flex-1 overflow-y-auto animate-in">
+                    <section className="hero-gradient text-white py-20 px-12 text-left relative overflow-hidden rounded-b-[4rem] shadow-2xl">
+                        <div className="max-w-4xl relative z-10">
+                            <div className="flex items-center gap-6 mb-8">
+                                <div className="bg-blue-500 p-5 rounded-[2rem] shadow-2xl shadow-blue-500/50">
+                                    <Icon name="Truck" size={56}/>
+                                </div>
+                                <h1 className="text-6xl font-black italic tracking-tighter uppercase leading-none">Asistencias Ulfar<br/><span className="text-blue-400 text-4xl">Plataforma Logística</span></h1>
+                            </div>
+                            <p className="text-xl text-slate-300 font-medium max-w-2xl mb-12 leading-relaxed italic">
+                                Sistema profesional basado en el método de los 9 Factores. Control preciso de flota, cálculo dinámico de costes y agenda en tiempo real.
+                            </p>
+                            <div className="flex gap-4">
+                                <button onClick={() => {setActiveTab('new-order'); setStep(1);}} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-5 rounded-[2rem] font-black uppercase tracking-widest text-sm flex items-center gap-4 transition-all shadow-xl shadow-blue-600/30 group">
+                                    Crear Orden <Icon name="ArrowRight" size={18} className="group-hover:translate-x-2 transition-transform"/>
+                                </button>
+                                <button onClick={() => setActiveTab('dashboard')} className="bg-slate-800/50 backdrop-blur hover:bg-slate-700 text-white px-10 py-5 rounded-[2rem] font-bold uppercase tracking-widest text-sm flex items-center gap-4 transition-all border border-slate-600">
+                                    Estadísticas <Icon name="Layout" size={18}/>
+                                </button>
+                            </div>
+                        </div>
+                        <Icon name="Truck" size={600} className="absolute -top-20 -right-20 opacity-5 scale-150 rotate-12 text-blue-100"/>
+                    </section>
+                    <section className="p-12 grid grid-cols-1 md:grid-cols-3 gap-10">
+                        <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 hover:-translate-y-2 transition-transform text-left">
+                            <div className="text-blue-600 mb-6 bg-blue-50 w-fit p-4 rounded-3xl"><Icon name="Target" size={32}/></div>
+                            <h3 className="text-xl font-black uppercase italic tracking-tighter mb-4">9 Factores Clave</h3>
+                            <p className="text-slate-500 font-medium leading-relaxed">Cálculo de presupuesto inquebrantable basado en peso, dimensiones, horario y riesgo.</p>
+                        </div>
+                        <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 hover:-translate-y-2 transition-transform text-left">
+                            <div className="text-emerald-600 mb-6 bg-emerald-50 w-fit p-4 rounded-3xl"><Icon name="Calendar" size={32}/></div>
+                            <h3 className="text-xl font-black uppercase italic tracking-tighter mb-4">Agenda Central</h3>
+                            <p className="text-slate-500 font-medium leading-relaxed">Organización de servicios mensuales con vista de calendario interactiva e inmediata.</p>
+                        </div>
+                        <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 hover:-translate-y-2 transition-transform text-left">
+                            <div className="text-amber-600 mb-6 bg-amber-50 w-fit p-4 rounded-3xl"><Icon name="Dollar" size={32}/></div>
+                            <h3 className="text-xl font-black uppercase italic tracking-tighter mb-4">Facturación Exacta</h3>
+                            <p className="text-slate-500 font-medium leading-relaxed">Control de adelantos, precio manual y método de pago unificado en un solo paso.</p>
+                        </div>
+                    </section>
+                </div>
+            );
+
+            // --- VISTA DASHBOARD ---
+            const DashboardView = () => {
+                const { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } = window.Recharts || {};
+                const pendingCount = history.filter(h => h.status === "Pendiente").length;
+                const scheduledCount = history.filter(h => h.status === "Programado").length;
+                const totalRevenue = history.reduce((acc, curr) => acc + curr.precio, 0);
+                const dataPie = [{ name: 'Pendientes', value: pendingCount }, { name: 'Programadas', value: scheduledCount }];
+                const COLORS = ['#ef4444', '#3b82f6'];
+
+                return (
+                    <div className="p-10 space-y-10 animate-in text-left overflow-y-auto h-full w-full">
+                        <div className="flex justify-between items-end border-b border-slate-200 pb-6">
+                            <div>
+                                <h2 className="text-4xl font-black uppercase italic tracking-tighter">Panel de Rendimiento</h2>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Resumen operativo global</p>
+                            </div>
+                            <div className="bg-slate-900 text-white px-8 py-4 rounded-[2rem] flex items-center gap-4 shadow-2xl">
+                                <div className="bg-emerald-500 p-2 rounded-xl"><Icon name="Dollar" size={24}/></div>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest leading-none mb-1">Facturación Total</p>
+                                    <span className="text-2xl font-black italic leading-none">{totalRevenue.toFixed(2)}€</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col items-center">
+                                <h3 className="text-xs font-black uppercase text-slate-400 mb-6 self-start tracking-widest">Estado de Servicios</h3>
+                                <div className="h-64 w-full">
+                                    {window.Recharts && (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie data={dataPie} innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
+                                                    {dataPie.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                                </Pie>
+                                                <Tooltip />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    )}
+                                </div>
+                                <div className="flex gap-6 mt-6">
+                                    <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-red-500"></div><span className="text-xs font-black uppercase">Pendientes ({pendingCount})</span></div>
+                                    <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-blue-500"></div><span className="text-xs font-black uppercase">Programadas ({scheduledCount})</span></div>
+                                </div>
+                            </div>
+                            <div className="lg:col-span-2 bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden">
+                                <h3 className="text-xs font-black uppercase text-slate-400 mb-8 tracking-widest">Histórico de Visitas Registradas</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left">
+                                        <thead>
+                                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b-2 border-slate-100">
+                                                <th className="pb-4 px-4">Cliente / Fecha</th>
+                                                <th className="pb-4">Vehículo</th>
+                                                <th className="pb-4">Destino</th>
+                                                <th className="pb-4">Ingreso</th>
+                                                <th className="pb-4 text-right px-4">Estatus</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="text-sm">
+                                            {history.map(item => (
+                                                <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                                    <td className="py-5 px-4">
+                                                        <p className="font-black text-slate-800">{item.cliente}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold mt-1">{item.fecha.replace('T', ' ')}</p>
+                                                    </td>
+                                                    <td className="py-5 text-slate-500 font-bold italic">{item.carro}</td>
+                                                    <td className="py-5 font-bold text-slate-600 truncate max-w-[150px]">{item.destino}</td>
+                                                    <td className="py-5 font-black text-blue-600 text-lg">{item.precio.toFixed(2)}€</td>
+                                                    <td className="py-5 text-right px-4">
+                                                        <span className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border ${item.status === 'Pendiente' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                            {item.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- VISTA CALENDARIO CON ESCALA AUMENTADA ---
+            const AgendaView = () => {
+                const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+                const now = new Date();
+                const currentMonth = now.getMonth();
+                const currentYear = now.getFullYear();
+                
+                const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+                const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+                
+                const grid = [];
+                for (let i = 0; i < firstDay; i++) grid.push(null);
+                for (let i = 1; i <= daysInMonth; i++) grid.push(i);
+
+                const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+                return (
+                    <div className="p-10 space-y-8 animate-in text-left h-full overflow-y-auto">
+                        <div className="flex justify-between items-center border-b border-slate-200 pb-6">
+                            <div>
+                                <h2 className="text-4xl font-black uppercase italic tracking-tighter">Calendario Logístico</h2>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Planificación mensual de flota</p>
+                            </div>
+                            <span className="text-lg font-black text-blue-600 uppercase italic bg-blue-50 px-8 py-3 rounded-[2rem] border-2 border-blue-100 shadow-sm">
+                                {monthNames[currentMonth]} {currentYear}
+                            </span>
+                        </div>
+                        <div className="bg-white rounded-[3rem] border border-slate-200 shadow-2xl p-10">
+                            <div className="grid grid-cols-7 gap-px mb-6 border-b-2 border-slate-100 pb-4">
+                                {days.map(d => <div key={d} className="text-center text-[10px] md:text-xs font-black uppercase text-slate-400 tracking-widest">{d}</div>)}
+                            </div>
+                            <div className="grid grid-cols-7 gap-4">
+                                {grid.map((day, idx) => {
+                                    if (!day) return <div key={`empty-${idx}`} className="bg-slate-50/50 rounded-3xl border border-dashed border-slate-200"></div>;
+                                    
+                                    const dStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+                                    const tasks = history.filter(h => h.fecha.startsWith(dStr));
+                                    const isToday = day === now.getDate();
+                                    
+                                    return (
+                                        <div key={day} className={`calendar-day rounded-3xl p-4 relative flex flex-col gap-2 overflow-y-auto ${isToday ? 'ring-4 ring-blue-500 bg-blue-50/20' : 'bg-white'}`}>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className={`text-xl font-black ${isToday ? 'text-blue-600' : 'text-slate-400'}`}>{day}</span>
+                                                {tasks.length > 0 && <span className="bg-slate-800 text-white text-[9px] font-black px-2 py-0.5 rounded-full">{tasks.length}</span>}
+                                            </div>
+                                            <div className="space-y-2">
+                                                {tasks.map(t => (
+                                                    <div key={t.id} className={`p-2.5 rounded-xl text-[10px] font-black truncate shadow-sm border flex items-center gap-2 ${t.status === 'Pendiente' ? 'bg-red-50 text-red-700 border-red-100' : 'bg-blue-600 text-white border-blue-700'}`}>
+                                                        <div className={`w-2 h-2 rounded-full shrink-0 ${t.status === 'Pendiente' ? 'bg-red-500' : 'bg-white'}`}></div>
+                                                        {t.cliente}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const stepsHeaderItems = [
+                { id: 1, label: 'Origen', icon: "MapPin" }, 
+                { id: 2, label: 'Destino', icon: "Navigation" }, 
+                { id: 3, label: 'Vehículo', icon: "Car" },
+                { id: 4, label: 'Análisis', icon: "Info" }, 
+                { id: 5, label: 'Prioridad', icon: "AlertTriangle" }, 
+                { id: 6, label: 'Cliente', icon: "User" }, 
+                { id: 7, label: 'Cierre', icon: "Check" }
+            ];
+
+            const ServiceDetailsAudit = () => (
+                <div className="mt-10 pt-6 border-t-4 border-slate-100 bg-slate-50/80 rounded-[3rem] p-8 text-left animate-in shadow-inner">
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="flex items-center gap-3 text-slate-500 italic font-black text-xs uppercase tracking-widest"><Icon name="Info" size={18}/> Auditoría 9 Factores</div>
+                        <div className="text-[10px] font-black bg-blue-100 text-blue-600 px-4 py-2 rounded-full uppercase tracking-widest">Cálculo en vivo</div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 text-sm font-bold text-slate-600">
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>1. Recorrido ({currentDistance} km)</span><span className="font-black text-slate-800">{calculation.f1_base.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>2. Vacío ({calculation.dVacio} km)</span><span className="font-black text-slate-800">+{calculation.f2_vacio.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>3. Peso/Dim (El Mayor)</span><span className="font-black text-slate-800">+{calculation.f3_mayor.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>4. Tiempo Operativo</span><span className="font-black text-slate-800">+{calculation.f4_incidencia.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>5. Estado Mecánico</span><span className="font-black text-slate-800">+{calculation.f5_mecanica.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>6. Prioridad</span><span className="font-black text-slate-800">+{calculation.f6_prioridad.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>7. Valor Vehículo</span><span className="font-black text-slate-800">+{calculation.f7_valor.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm"><span>8. Día y Hora</span><span className="font-black text-slate-800">+{calculation.f8_horario.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center bg-emerald-50 text-emerald-800 p-3 rounded-2xl col-span-1 md:col-span-2 shadow-sm border border-emerald-100"><span>9. Gestión País (% Riesgo)</span><span className="font-black">+{calculation.recargoNacionalidad.toFixed(2)}€</span></div>
+                        
+                        <div className="flex justify-between items-center col-span-1 md:col-span-2 text-lg font-black text-slate-800 mt-4 pt-4 border-t-2 border-slate-200"><span>SUBTOTAL</span><span>{calculation.subtotal.toFixed(2)}€</span></div>
+                        <div className="flex justify-between items-center col-span-1 md:col-span-2 text-3xl font-black text-blue-600 italic bg-blue-50 p-6 rounded-[2rem]"><span>TOTAL (+ IVA)</span><span>{calculation.total.toFixed(2)}€</span></div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen flex flex-col bg-[#f1f5f9]">
+                    {showSuccess && (
+                        <div className="modal-overlay" onClick={() => setShowSuccess(false)}>
+                            <div className="bg-white p-12 rounded-[4rem] shadow-2xl text-center max-w-md w-full mx-4 border-4 border-blue-50 animate-in" onClick={e => e.stopPropagation()}>
+                                <div className="bg-emerald-500 text-white w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-xl shadow-emerald-200 rotate-12"><Icon name="ShieldCheck" size={48}/></div>
+                                <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter mb-4">¡Orden Emitida!</h2>
+                                <p className="text-base text-slate-500 mb-10 font-medium italic">La asistencia ha sido guardada y sincronizada correctamente.</p>
+                                <button onClick={() => {setShowSuccess(false); setStep(1); setActiveTab('dashboard');}} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs hover:bg-blue-600 transition-all shadow-lg">Ver en Dashboard</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <nav className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-50 shadow-sm">
+                        <div className="flex items-center gap-8 h-full">
+                            <div className="flex items-center gap-3 text-blue-600 font-black text-xl uppercase italic tracking-tighter">
+                                <Icon name="Truck" size={24}/>
+                                <span>Ulfar Pro</span>
+                            </div>
+                            <div className="flex h-full border-l-2 border-slate-100 ml-4 pl-4">
+                                <button onClick={() => setActiveTab('home')} className={`btn-nav text-xs px-6 ${activeTab === 'home' ? 'nav-tab-active' : 'text-slate-400 hover:text-slate-800'}`}><Icon name="Home" size={16}/> Inicio</button>
+                                <button onClick={() => setActiveTab('new-order')} className={`btn-nav text-xs px-6 ${activeTab === 'new-order' ? 'nav-tab-active' : 'text-slate-400 hover:text-slate-800'}`}><Icon name="Truck" size={16}/> Nueva Orden</button>
+                                <button onClick={() => setActiveTab('dashboard')} className={`btn-nav text-xs px-6 ${activeTab === 'dashboard' ? 'nav-tab-active' : 'text-slate-400 hover:text-slate-800'}`}><Icon name="Layout" size={16}/> Dashboard</button>
+                                <button onClick={() => setActiveTab('calendar')} className={`btn-nav text-xs px-6 ${activeTab === 'calendar' ? 'nav-tab-active' : 'text-slate-400 hover:text-slate-800'}`}><Icon name="Calendar" size={16}/> Agenda</button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div className="flex-1 flex overflow-hidden">
+                        {activeTab === 'home' && <HomeView />}
+                        {activeTab === 'new-order' && (
+                            <>
+                                <aside className="w-80 bg-white border-r border-slate-200 p-8 flex flex-col justify-between shadow-2xl animate-in text-left z-10">
+                                    <div className="space-y-8">
+                                        <h3 className="text-[10px] font-black uppercase text-slate-300 border-b-2 border-slate-50 pb-3 italic tracking-[0.2em]">Monitor Logístico</h3>
+                                        <div className="space-y-6">
+                                            <div className="flex gap-4 items-center"><div className="bg-blue-50 p-3 rounded-2xl text-blue-600"><Icon name="MapPin" size={18}/></div><div><label className="!mb-1">Origen</label><p className="text-xs font-bold leading-tight line-clamp-2 italic text-slate-700">{formData.recogida}</p></div></div>
+                                            <div className="flex gap-4 items-center"><div className="bg-emerald-50 p-3 rounded-2xl text-emerald-600"><Icon name="Navigation" size={18}/></div><div><label className="!mb-1">Destino</label><p className="text-xs font-bold leading-tight line-clamp-2 italic text-slate-700">{formData.entrega}</p></div></div>
+                                            <div className="flex gap-4 items-center"><div className="bg-amber-50 p-3 rounded-2xl text-amber-600"><Icon name="Car" size={18}/></div><div><label className="!mb-1">Vehículo</label><p className="text-xs font-bold leading-tight text-slate-800">{formData.marcaModelo || 'Pendiente'}</p></div></div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-900 text-white p-6 rounded-[2.5rem] border border-slate-800 text-left shadow-2xl shadow-blue-900/20">
+                                        <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2 italic">Presupuesto Actual</p>
+                                        <span className="text-4xl font-black italic tracking-tighter text-blue-400">{(calculation.total + calculation.iva).toFixed(2)}€</span>
+                                    </div>
+                                </aside>
+                                <main className="flex-1 p-8 overflow-y-auto flex flex-col animate-in relative">
+                                    {/* STEPPER */}
+                                    <div className="flex justify-between items-center mb-10 relative px-8 max-w-4xl mx-auto w-full">
+                                        <div className="absolute top-5 left-16 right-16 h-1.5 bg-slate-200 -z-10 rounded-full"></div>
+                                        {stepsHeaderItems.map((s) => (
+                                            <div key={s.id} className="flex flex-col items-center">
+                                                <div className={`w-12 h-12 rounded-[1.25rem] flex items-center justify-center border-4 transition-all duration-300 ${step >= s.id ? 'bg-blue-600 border-white text-white shadow-xl scale-110' : 'bg-slate-100 border-white text-slate-400'}`}>
+                                                    {step > s.id ? <Icon name="Check" size={18}/> : <Icon name={s.icon} size={16}/>}
+                                                </div>
+                                                <span className={`text-[9px] mt-3 font-black uppercase tracking-widest text-center ${step >= s.id ? 'text-blue-700' : 'text-slate-400'}`}>{s.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="bg-white rounded-[3rem] border border-slate-200 flex-1 flex flex-col overflow-hidden max-w-5xl mx-auto w-full shadow-2xl shadow-slate-200/50">
+                                        <div className="p-12 flex-1 overflow-y-auto">
+                                            {step === 1 && <div className="space-y-6 animate-in text-left"><h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 italic text-slate-800">1. Ubicación de Recogida</h2><input type="text" className="!p-6 !text-xl font-bold bg-slate-50 rounded-[2rem] border-none shadow-inner" value={formData.recogida} onChange={e => setFormData({...formData, recogida: e.target.value})} /><InteractiveMap lat={formData.recogidaCoords.lat} lng={formData.recogidaCoords.lng} title="Auditoría Origen" onLocationChange={(lat,lng) => setFormData({...formData, recogidaCoords: {lat,lng}})} /></div>}
+                                            {step === 2 && <div className="space-y-6 animate-in text-left"><h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 italic text-slate-800">2. Ubicación de Destino</h2><input type="text" className="!p-6 !text-xl font-bold bg-slate-50 rounded-[2rem] border-none shadow-inner" value={formData.entrega} onChange={e => setFormData({...formData, entrega: e.target.value})} /><InteractiveMap lat={formData.entregaCoords.lat} lng={formData.entregaCoords.lng} title="Auditoría Destino" onLocationChange={(lat,lng) => setFormData({...formData, entregaCoords: {lat,lng}})} /></div>}
+                                            
+                                            {step === 3 && (
+                                                <div className="space-y-6 animate-in text-left font-bold italic">
+                                                    <h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 italic text-slate-800">3. Ficha Técnica Vehículo (8 CAMPOS)</h2>
+                                                    <div className="grid grid-cols-2 gap-8">
+                                                        <div><label>Matrícula</label><input type="text" className="font-black uppercase !text-2xl !p-5 bg-blue-50 border-blue-100" placeholder="EJ: 1234 ABC" value={formData.matricula} onChange={e => setFormData({...formData, matricula: e.target.value.toUpperCase()})} /></div>
+                                                        <div className="relative"><label>Modelo / Búsqueda Automática</label><input type="text" className="!p-5 !text-lg" placeholder="Buscar Audi, VW..." value={searchTerm} onChange={e => {setSearchTerm(e.target.value); setShowVehResults(true);}} onFocus={() => setShowVehResults(true)} />{showVehResults && searchTerm.length > 2 && <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-100 rounded-[2rem] shadow-2xl z-50 p-3 max-h-60 overflow-y-auto">{MOCK_VEHICLES.filter(v => v.marca.toLowerCase().includes(searchTerm.toLowerCase())).map(v => (<button key={v.id} onClick={() => selectVehicle(v)} className="w-full text-left p-4 hover:bg-blue-50 rounded-2xl text-xs font-black flex gap-3 items-center italic transition-colors"><div className="bg-white p-2 rounded-xl shadow-sm"><Icon name="Car" size={16}/></div> {v.marca} {v.modelo}</button>))}</div>}</div>
+                                                    </div>
+                                                    <div className="grid grid-cols-4 gap-4 bg-slate-50 p-8 rounded-[3rem] border border-slate-100 mt-4 shadow-inner">
+                                                        {['tipo', 'categoria', 'largo', 'peso', 'l_l3', 'gama', 'voladizo', 'cilindraje'].map(k => (
+                                                            <div key={k}><label>{k}</label><input type="text" className="!p-3 !text-sm font-black border-slate-200 shadow-sm" value={formData[k] || ""} onChange={e => setFormData({...formData, [k]: e.target.value})} /></div>
+                                                        ))}
+                                                        <div className="col-span-4 mt-4 pt-4 border-t border-slate-200"><label className="text-blue-600 text-xs">Valor Estimado del Vehículo (Factor 7)</label><select className="font-black !p-4 !text-sm border-blue-300 bg-blue-50" value={formData.valorVehiculo} onChange={e => setFormData({...formData, valorVehiculo: e.target.value})}><option value="0">Inferior a 5.000€ (Riesgo Bajo)</option><option value="50">Entre 5.001€ y 15.000€ (+50€)</option><option value="100">Entre 15.001€ y 30.000€ (+100€)</option><option value="150">Entre 30.001€ y 60.000€ (+150€)</option><option value="200">Superior a 60.000€ (+200€)</option></select></div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {step === 4 && <div className="space-y-6 animate-in text-left font-bold italic"><h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 italic text-slate-800">4. Análisis Técnico Operativo</h2><div className="grid grid-cols-2 gap-8"><div><label className="text-blue-600 text-xs">Distancia en Vacío (km reales)</label><input type="number" placeholder="Ej: 18" className="font-black !text-2xl !p-5 border-blue-300 bg-blue-50" value={formData.distanciaVacio} onChange={e => setFormData({...formData, distanciaVacio: e.target.value})} /></div><div><label className="text-xs">Tiempo de Incidencia</label><select className="font-black !p-5 !text-sm" value={formData.tiempoIncidencia} onChange={e => setFormData({...formData, tiempoIncidencia: e.target.value})}><option value="0">Carga Directa &lt; 20 min</option><option value="100">Maniobra Media 30-60m (+100€)</option><option value="200">Maniobra Compleja 60-120m (+200€)</option><option value="300">Operación Prolongada &gt; 120m (+300€)</option></select></div><div><label className="text-xs">Estado Mecánico</label><select className="font-black !p-5 !text-sm" value={formData.estadoVehiculo} onChange={e => setFormData({...formData, estadoVehiculo: e.target.value})}><option value="0">Mecánico (Rodante)</option><option value="50">Dirección bloqueada (+50€)</option><option value="100">2 Ruedas bloqueadas (+100€)</option><option value="200">Totalmente inmovilizado (+200€)</option></select></div><div><label className="text-xs">Zona Especial / Difícil</label><select className="font-black !p-5 !text-sm" value={formData.zonaDificil} onChange={e => setFormData({...formData, zonaDificil: e.target.value})}><option value="NO">Libre de obstáculos</option><option value="SI">Zona Restringida / Túnel (+50€)</option></select></div></div></div>}
+                                            {step === 5 && (
+                                                <div className="space-y-8 animate-in text-center font-bold italic">
+                                                    <h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 italic text-slate-800">5. Prioridad y Horario</h2>
+                                                    <div className="text-left mb-8 px-6"><label className="text-blue-600 text-xs">Día y Hora del Servicio (Factor 8)</label><select className="font-black !p-5 !text-sm border-blue-300 bg-blue-50 rounded-[2rem]" value={formData.horarioEspecial} onChange={e => setFormData({...formData, horarioEspecial: e.target.value})}><option value="0">Laboral (08:00 - 18:00h)</option><option value="30">Nocturno (18:00 - 22:00h) [+30€]</option><option value="150">Nocturno Profundo (22:00 - 08:00h) [+150€]</option><option value="150.1">Domingo / Festivo [+150€]</option><option value="210">Nocturno Profundo + Festivo [+210€]</option></select></div>
+                                                    <div className="grid grid-cols-3 gap-6 px-6">{[ {id:"50",l:"URGENTE",c:"text-red-600",i:"AlertTriangle"}, {id:"0",l:"PROGRAMADO",c:"text-blue-600",i:"Clock"}, {id:"150",l:"EMERGENCIA",c:"text-orange-600",i:"Zap"} ].map((s) => (<button key={s.id} onClick={() => setFormData({...formData, prioridad: s.id})} className={`p-8 border-4 rounded-[3rem] transition-all duration-300 ${formData.prioridad === s.id ? 'border-blue-600 bg-blue-50 shadow-2xl scale-105' : 'bg-slate-50 border-transparent hover:border-slate-200'}`}><div className={`${s.c} mb-4 flex justify-center`}><Icon name={s.i} size={40}/></div><h3 className={`text-sm font-black uppercase tracking-widest`}>{s.l}</h3></button>))}</div>
+                                                </div>
+                                            )}
+                                            {step === 6 && <div className="space-y-6 animate-in text-left font-bold italic"><h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 text-center font-bold italic text-slate-800">6. Información del Cliente</h2><div className="grid grid-cols-2 gap-8 px-10 text-left"><div><label className="text-xs">Nombre Completo</label><input type="text" className="!p-5" placeholder="Ej: Roberto Ulfar" value={formData.nombreCliente} onChange={e => setFormData({...formData, nombreCliente: e.target.value})} /></div><div><label className="text-xs">Estatus Presencia</label><select className="!p-5 font-black" value={formData.presenciaCliente} onChange={e => setFormData({...formData, presenciaCliente: e.target.value})}><option>Presente</option><option>Ausente / Taller</option></select></div><div><label className="text-xs">Fecha Inicio Operación</label><input type="datetime-local" className="!p-5 text-sm font-black" value={formData.fechaServicio} onChange={e => setFormData({...formData, fechaServicio: e.target.value})} /></div><div className="col-span-full"><label className="text-blue-600 font-bold italic text-xs">Número de Celular</label><div className="flex gap-4"><select className="font-black !p-5 !text-lg border-blue-200 w-1/3 bg-blue-50" value={formData.indicativoPais} onChange={e => setFormData({...formData, indicativoPais: e.target.value})}>{COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.name} (+{c.code})</option>)}</select><input type="tel" className="font-black text-3xl tracking-[0.2em] !p-5 border-blue-300 bg-blue-50 shadow-inner w-2/3" placeholder="600 000 000" value={formData.telefonoCliente} onChange={e => setFormData({...formData, telefonoCliente: e.target.value})} /></div></div><div className="col-span-full pt-6 border-t-2 border-slate-100"><label className="text-emerald-600 text-xs">Nacionalidad y Gestión (Factor 9)</label><select className="font-black !p-5 border-emerald-300 text-emerald-900 bg-emerald-50 rounded-[2rem]" value={formData.recargoNacionalidad} onChange={e => setFormData({...formData, recargoNacionalidad: e.target.value})}><option value="0">Local / Riesgo Bajo (Sin recargo)</option><option value="0.5">Riesgo Medio (+50%)</option><option value="1.0">Riesgo Alto (+100%)</option><option value="1.5">Riesgo Extremo / Reino Unido (+150%)</option></select></div></div></div>}
+                                            
+                                            {step === 7 && (
+                                                <div className="space-y-8 animate-in text-left font-bold italic text-slate-800">
+                                                    <h2 className="text-2xl font-black uppercase border-b-2 border-slate-50 pb-4 text-center font-black uppercase tracking-widest text-slate-800">7. Liquidación Administrativa (9 CAMPOS)</h2>
+                                                    <div className="grid grid-cols-3 gap-6 px-4">
+                                                        <div><label>Operador Asignado</label><select className="font-black !p-4" value={formData.conductor} onChange={e => setFormData({...formData, conductor: e.target.value})}><option>Diego Garcia</option><option>Carlos Ulfar</option></select></div>
+                                                        <div><label>¿Envío a Taller?</label><select className="font-black !p-4" value={formData.esTaller} onChange={e => setFormData({...formData, esTaller: e.target.value})}><option value="NO">NO</option><option value="SI">SI</option></select></div>
+                                                        <div><label>Canal Origen</label><select className="font-black !p-4" value={formData.canalOrigen} onChange={e => setFormData({...formData, canalOrigen: e.target.value})}><option value="Particular">Particular Directo</option><option value="Seguro">Compañía Seguro</option></select></div>
+                                                        <div><label>Método de Pago</label><select className="font-black !p-4 border-blue-200 bg-blue-50" value={formData.metodoPago} onChange={e => setFormData({...formData, metodoPago: e.target.value})}><option>Efectivo</option><option>Tarjeta de Crédito</option><option>Bizum</option></select></div>
+                                                        <div><label>¿Requiere Factura?</label><select className="font-black !p-4" value={formData.requiereFactura} onChange={e => setFormData({...formData, requiereFactura: e.target.value})}><option value="NO">NO</option><option value="SI">SÍ</option></select></div>
+                                                        <div><label className="text-blue-600 font-black">Precio Final Acordado</label><input type="number" placeholder="Opcional" className="!p-4 font-black text-xl" value={formData.precioFinalManual} onChange={e => setFormData({...formData, precioFinalManual: e.target.value})} /></div>
+                                                        <div className="col-span-full pt-6 border-t-2 border-slate-100 text-left font-bold italic leading-none"><label className="text-emerald-600 font-black italic uppercase text-xs mb-3">Adelantos Registrados (Anticipos)</label><input type="number" placeholder="0.00" className="font-black text-4xl text-emerald-700 border-4 border-emerald-200 shadow-inner !p-6 bg-emerald-50 rounded-[2rem]" value={formData.adelantosPagos} onChange={e => setFormData({...formData, adelantosPagos: e.target.value})} /></div>
+                                                        <div className="col-span-full mt-4"><label className="flex items-center gap-2 text-xs"><Icon name="MessageSquare" size={16}/> Notas Operativas de Cierre</label><textarea className="h-24 text-sm font-bold !p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem]" value={formData.observaciones} onChange={e => setFormData({...formData, observaciones: e.target.value})} placeholder="Instrucciones para el conductor, peajes, detalles del cliente..."></textarea></div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {step >= 3 && <ServiceDetailsAudit />}
+                                        </div>
+                                        <div className="px-10 py-6 bg-slate-50 border-t-2 border-slate-100 flex justify-between items-center mt-auto">
+                                            <button onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1} className={`px-8 py-4 text-[11px] font-black uppercase rounded-[2rem] transition-all flex items-center gap-3 ${step === 1 ? 'text-slate-200 pointer-events-none' : 'text-slate-500 hover:bg-white hover:shadow-md'}`}><Icon name="ChevronLeft" size={18}/> Volver</button>
+                                            <button onClick={() => step === 7 ? handleFinalize() : setStep(s => s + 1)} className="px-12 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 shadow-2xl shadow-blue-500/30 transition-all flex items-center gap-3 italic transform active:scale-95">{step === 7 ? 'Finalizar y Agendar' : 'Siguiente Paso'} <Icon name="ChevronRight" size={18}/></button>
+                                        </div>
+                                    </div>
+                                </main>
+                            </>
+                        )}
+                        {activeTab === 'dashboard' && <DashboardView />}
+                        {activeTab === 'calendar' && <AgendaView />}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
